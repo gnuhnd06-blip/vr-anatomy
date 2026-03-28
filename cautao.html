@@ -1,0 +1,421 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Khám Phá Cơ Thể Người 3D</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:#0a0e1a;font-family:'Segoe UI',system-ui,sans-serif;color:#e0e8ff;overflow:hidden}
+#app{display:flex;height:100vh;width:100vw}
+#canvas-wrap{flex:1;position:relative}
+canvas{display:block;width:100%;height:100%}
+#sidebar{width:290px;background:#0d1220;border-left:1px solid #1e2a45;display:flex;flex-direction:column;overflow:hidden}
+#level-bar{padding:14px;border-bottom:1px solid #1e2a45}
+#level-bar h3{font-size:11px;color:#4a6fa5;letter-spacing:1.5px;text-transform:uppercase;margin-bottom:10px}
+.level-btn{display:block;width:100%;text-align:left;padding:9px 12px;background:none;border:none;border-radius:6px;color:#7a9cc8;font-size:13px;cursor:pointer;transition:all 0.15s;margin-bottom:3px}
+.level-btn:hover{background:#1a2640;color:#e0e8ff}
+.level-btn.active{background:#1a3a6e;color:#60aaff;font-weight:600}
+#info-panel{padding:14px;border-bottom:1px solid #1e2a45;min-height:130px}
+#info-title{font-size:17px;font-weight:600;color:#60aaff;margin-bottom:6px}
+#info-desc{font-size:13px;color:#8aa0c0;line-height:1.65}
+#info-facts{margin-top:10px}
+.fact{font-size:12px;color:#5a8ab8;padding:4px 0;border-bottom:0.5px solid #1a2640;line-height:1.5}
+#parts-list{flex:1;overflow-y:auto;padding:12px;scrollbar-width:thin;scrollbar-color:#1e2a45 transparent}
+#parts-list::-webkit-scrollbar{width:4px}
+#parts-list::-webkit-scrollbar-thumb{background:#1e2a45;border-radius:2px}
+#parts-list h3{font-size:11px;color:#4a6fa5;letter-spacing:1.5px;text-transform:uppercase;margin-bottom:10px}
+.part-item{padding:8px 10px;border-radius:6px;cursor:pointer;margin-bottom:3px;border:0.5px solid transparent;transition:all 0.15s;display:flex;align-items:center;gap:10px}
+.part-item:hover{background:#1a2640;border-color:#2a3a5a}
+.part-item.selected{background:#1a3a6e;border-color:#3060a0}
+.part-dot{width:11px;height:11px;border-radius:50%;flex-shrink:0}
+.part-name{font-size:13px;color:#a0b8d8}
+.part-item.selected .part-name{color:#60aaff;font-weight:500}
+#controls{padding:10px 14px;border-top:1px solid #1e2a45;font-size:11px;color:#3a5070;line-height:1.6}
+#tooltip{position:absolute;background:#0d1830;border:1px solid #2a4070;border-radius:8px;padding:8px 12px;font-size:13px;color:#c0d8ff;pointer-events:none;opacity:0;transition:opacity 0.15s;max-width:200px;z-index:10}
+#zoom-hint{position:absolute;top:14px;left:14px;background:rgba(13,18,32,0.85);border:1px solid #1e2a45;border-radius:8px;padding:8px 12px;font-size:12px;color:#4a6fa5;line-height:1.6}
+#title-overlay{position:absolute;top:14px;left:50%;transform:translateX(-50%);background:rgba(13,18,32,0.85);border:1px solid #1e2a45;border-radius:8px;padding:6px 18px;font-size:14px;color:#60aaff;font-weight:500;pointer-events:none}
+</style>
+</head>
+<body>
+<div id="app">
+<div id="canvas-wrap">
+  <canvas id="c"></canvas>
+  <div id="tooltip"></div>
+  <div id="zoom-hint">Kéo để xoay<br>Cuộn để zoom<br>Nhấn để chọn</div>
+  <div id="title-overlay">Khám Phá Cơ Thể Người 3D</div>
+</div>
+<div id="sidebar">
+  <div id="level-bar">
+    <h3>Cấp độ khám phá</h3>
+    <button class="level-btn active" onclick="setLevel('body')">🧍 Toàn thân</button>
+    <button class="level-btn" onclick="setLevel('organs')">🫀 Hệ cơ quan</button>
+    <button class="level-btn" onclick="setLevel('tissue')">🔬 Mô &amp; tổ chức</button>
+    <button class="level-btn" onclick="setLevel('cell')">🧫 Tế bào</button>
+    <button class="level-btn" onclick="setLevel('micro')">🧬 Vi cấu trúc</button>
+  </div>
+  <div id="info-panel">
+    <div id="info-title">Cơ thể người</div>
+    <div id="info-desc">Chọn một bộ phận để xem thông tin chi tiết. Kéo để xoay mô hình 3D.</div>
+    <div id="info-facts"></div>
+  </div>
+  <div id="parts-list">
+    <h3>Bộ phận</h3>
+    <div id="parts-container"></div>
+  </div>
+  <div id="controls">
+    Nhấn vào bộ phận trên mô hình hoặc danh sách để chọn.<br>
+    Dùng nút cấp độ để thu phóng vào từng tầng cấu trúc.
+  </div>
+</div>
+</div>
+ 
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+const LEVELS = {
+  body: {
+    label: 'Toàn thân',
+    parts: [
+      {id:'head',name:'Đầu',color:0xf4a460,pos:[0,3.2,0],geo:'sphere',size:[0.85,20,20],info:'Chứa não bộ và các cơ quan cảm giác: mắt, tai, mũi, miệng. Não người nặng ~1.4kg với ~86 tỉ tế bào thần kinh.',facts:['Não xử lý 70,000 suy nghĩ mỗi ngày','Đầu chiếm ~8% chiều cao cơ thể','14 xương tạo thành hộp sọ']},
+      {id:'neck',name:'Cổ',color:0xe8956d,pos:[0,2.35,0],geo:'cyl',size:[0.3,0.3,0.7,12],info:'Nối đầu với thân. Chứa 7 đốt sống cổ, khí quản, thực quản và các mạch máu lớn đến não.',facts:['7 đốt sống cổ','Đỡ 5–6 kg trọng lượng đầu mỗi ngày','Chứa động mạch cảnh và tĩnh mạch cảnh']},
+      {id:'chest',name:'Ngực',color:0xd4756a,pos:[0,1.3,0],geo:'box',size:[1.5,1.4,0.75],info:'Bảo vệ tim và phổi. Lồng ngực gồm 12 cặp xương sườn, xương ức và cột sống ngực.',facts:['Chứa tim và 2 phổi','Lồng ngực mở rộng 1,000+ lần mỗi ngày','Tim đập ~100,000 lần mỗi ngày']},
+      {id:'abdomen',name:'Bụng',color:0xc97b5c,pos:[0,0,0],geo:'box',size:[1.4,1.2,0.7],info:'Chứa dạ dày, ruột, gan, tụy, lá lách, thận. Không có xương bảo vệ, chỉ có lớp cơ bụng dày.',facts:['Ruột non dài 6–7 mét','Gan là nội tạng lớn nhất (~1.5 kg)','Dạ dày chứa được ~1.5 lít thức ăn']},
+      {id:'pelvis',name:'Xương chậu',color:0xb07055,pos:[0,-1.0,0],geo:'box',size:[1.3,0.7,0.65],info:'Nâng đỡ cột sống, bảo vệ các cơ quan vùng chậu. Gồm 3 xương: chậu, ngồi và mu.',facts:['Nơi bám của nhiều cơ lớn nhất','Phụ nữ có xương chậu rộng hơn nam','Chứa bàng quang và cơ quan sinh dục']},
+      {id:'arm_l',name:'Tay trái',color:0xe8956d,pos:[-1.15,1.1,0],geo:'cyl',size:[0.24,0.24,1.5,12],info:'Gồm xương cánh tay (humerus), xương trụ và quay. Có 30 xương, hơn 100 cơ và gân.',facts:['30 xương trong bàn tay và ngón tay','Lực cầm nắm tối đa ~40 kg','Ngón cái đối diện giúp cầm nắm chính xác']},
+      {id:'arm_r',name:'Tay phải',color:0xe8956d,pos:[1.15,1.1,0],geo:'cyl',size:[0.24,0.24,1.5,12],info:'Cấu tạo tương tự tay trái. ~90% dân số thế giới thuận tay phải.',facts:['~90% người trên thế giới thuận tay phải','Vai có biên độ chuyển động lớn nhất cơ thể','Xương cánh tay là xương dài nhất chi trên']},
+      {id:'leg_l',name:'Chân trái',color:0xc8855a,pos:[-0.5,-2.3,0],geo:'cyl',size:[0.32,0.32,1.9,12],info:'Gồm xương đùi (dài nhất cơ thể), xương bánh chè, xương chày và mác. Chịu toàn bộ trọng lượng cơ thể.',facts:['Xương đùi là xương dài và chắc nhất','Cơ tứ đầu đùi là cơ lớn nhất cơ thể','Bàn chân có 26 xương và 33 khớp']},
+      {id:'leg_r',name:'Chân phải',color:0xc8855a,pos:[0.5,-2.3,0],geo:'cyl',size:[0.32,0.32,1.9,12],info:'Đối xứng với chân trái. Hệ cơ chân chiếm ~40% khối lượng cơ thể.',facts:['Cơ bắp chân co 10,000+ lần khi đi bộ 1 km','Gân Achilles là gân chắc nhất cơ thể','Bàn chân tiếp đất ~1.5 triệu lần/năm']},
+    ]
+  },
+  organs: {
+    label: 'Hệ cơ quan',
+    parts: [
+      {id:'brain',name:'Não bộ',color:0xff9eb5,pos:[0,1.6,0],geo:'sphere',size:[1.25,20,20],info:'Trung tâm điều khiển toàn bộ cơ thể. Nặng ~1.4 kg, tiêu thụ 20% năng lượng cơ thể dù chỉ chiếm 2% khối lượng.',facts:['86 tỉ tế bào thần kinh','Xung thần kinh truyền với tốc độ 120 m/s','Hoạt động liên tục kể cả khi ngủ']},
+      {id:'heart',name:'Tim',color:0xff4444,pos:[-0.35,0.5,0.4],geo:'sphere',size:[0.58,16,16],info:'Bơm máu đến toàn thân. Đập ~100,000 lần/ngày, bơm ~5 lít máu/phút. Gồm 4 ngăn: 2 tâm nhĩ và 2 tâm thất.',facts:['Bơm 7,570 lít máu mỗi ngày','Tạo áp lực đủ phun máu cao 9 mét','Có hệ thống điện riêng tự phát nhịp']},
+      {id:'lungs',name:'Phổi',color:0xffaa66,pos:[0,0.5,0],geo:'sphere',size:[0.95,16,16],info:'2 phổi chứa ~600 triệu túi phế nang. Diện tích trao đổi khí ~70 m² — bằng một sân tennis.',facts:['Phổi phải lớn hơn phổi trái','Hít thở 23,000 lần mỗi ngày','Diện tích trao đổi khí = sân tennis']},
+      {id:'liver',name:'Gan',color:0x8b4513,pos:[0.45,-0.2,0.2],geo:'sphere',size:[0.72,16,16],info:'Cơ quan nội tạng lớn nhất (~1.5 kg). Thực hiện hơn 500 chức năng: lọc độc tố, sản xuất mật, chuyển hóa.',facts:['Có thể tái sinh đến 75% nếu bị cắt','Sản xuất 1 lít mật mỗi ngày','Lọc 1.4 lít máu mỗi phút']},
+      {id:'stomach',name:'Dạ dày',color:0x9370db,pos:[-0.3,-0.4,0.3],geo:'sphere',size:[0.52,16,16],info:'Tiêu hóa thức ăn bằng axit HCl (pH 1.5–3.5) và enzyme. Co bóp để nghiền nát thức ăn.',facts:['Axit đủ mạnh để hòa tan một số kim loại','Tiết 2–3 lít dịch tiêu hóa/ngày','Thức ăn ở lại dạ dày 2–6 giờ']},
+      {id:'kidney',name:'Thận',color:0x4169e1,pos:[0,-0.35,-0.2],geo:'sphere',size:[0.42,16,16],info:'2 thận lọc toàn bộ máu cơ thể 40 lần/ngày (180 lít). Sản xuất 1–2 lít nước tiểu/ngày.',facts:['Lọc 180 lít máu mỗi ngày','Mỗi thận có ~1 triệu đơn vị lọc (nephron)','Thận trái thường cao hơn thận phải']},
+      {id:'intestine',name:'Ruột',color:0x20b2aa,pos:[0,-0.9,0],geo:'sphere',size:[0.68,16,16],info:'Ruột non dài 6–7 m hấp thu chất dinh dưỡng. Ruột già dài 1.5 m hấp thu nước và tạo phân.',facts:['Tổng chiều dài ruột ~9 mét','100 nghìn tỉ vi khuẩn sinh sống trong ruột','Bề mặt hấp thu ruột non lên tới 250 m²']},
+      {id:'spine',name:'Cột sống',color:0xdaa520,pos:[0,0,-0.45],geo:'cyl',size:[0.16,0.16,3.6,12],info:'33 đốt sống tạo thành cột trụ cơ thể. Bảo vệ tủy sống và chịu tải trọng toàn thân.',facts:['33 đốt sống','Tủy sống dài ~45 cm','Đĩa đệm là lớp đệm giữa các đốt']},
+    ]
+  },
+  tissue: {
+    label: 'Mô & tổ chức',
+    parts: [
+      {id:'muscle',name:'Mô cơ',color:0xdc143c,pos:[0,0.8,0],geo:'box',size:[2.2,2.8,0.35],info:'Gồm 3 loại: cơ vân (tự chủ), cơ trơn (nội tạng tự động), cơ tim. Cơ thể có ~650 cơ vân.',facts:['650+ cơ vân trong cơ thể','Cơ chiếm ~40% khối lượng cơ thể','Cơ cắn (masseter) là cơ nhai mạnh nhất']},
+      {id:'bone',name:'Mô xương',color:0xfffacd,pos:[0,0,0],geo:'cyl',size:[0.4,0.4,2.5,16],info:'Mô xương cứng chắc gồm collagen và canxi phosphat. Được tái tạo liên tục với chu kỳ ~10 năm.',facts:['206 xương ở người trưởng thành','Xương chắc gấp 5 lần thép cùng khối lượng','Tủy xương sản xuất 2.5 triệu hồng cầu/giây']},
+      {id:'nerve',name:'Mô thần kinh',color:0xffff44,pos:[0.9,0.5,0],geo:'cyl',size:[0.07,0.07,2.8,8],info:'Gồm tế bào thần kinh (neuron) và tế bào thần kinh đệm (glia). Dẫn truyền xung điện với tốc độ cực cao.',facts:['Tốc độ dẫn truyền: 1–120 m/s','Não có 86 tỉ neuron','Mỗi neuron kết nối với ~10,000 neuron khác']},
+      {id:'epithelium',name:'Mô biểu bì',color:0xffa07a,pos:[0,1.8,0.5],geo:'box',size:[2.5,0.09,2.5],info:'Lớp tế bào phủ bề mặt cơ thể và lót các cơ quan. Chức năng: bảo vệ, hấp thu, bài tiết.',facts:['Da thay mới hoàn toàn mỗi 2–3 tuần','Có 4 loại mô biểu bì chính','Ruột non có vi nhung mao tăng diện tích hấp thu']},
+      {id:'connective',name:'Mô liên kết',color:0x87ceeb,pos:[-0.9,0,0.2],geo:'sphere',size:[0.65,12,12],info:'Gân, dây chằng, mỡ, sụn, máu — đều là mô liên kết. Nâng đỡ và kết nối các cơ quan.',facts:['Máu cũng là một loại mô liên kết','Gân Achilles chịu lực gấp 7 lần trọng lượng cơ thể','Sụn không có mạch máu riêng']},
+      {id:'blood',name:'Máu',color:0xff2222,pos:[0,-0.5,0.6],geo:'sphere',size:[0.52,12,12],info:'5–6 lít máu lưu thông liên tục. Gồm hồng cầu, bạch cầu, tiểu cầu và huyết tương.',facts:['5–6 lít máu trong cơ thể người','Hồng cầu sống được khoảng 120 ngày','Bạch cầu tiêu diệt vi khuẩn trong vài phút']},
+    ]
+  },
+  cell: {
+    label: 'Tế bào',
+    parts: [
+      {id:'cytoplasm',name:'Tế bào chất',color:0x00ced1,pos:[0,0,0],geo:'sphere',size:[1.9,20,20],info:'Môi trường keo lỏng bên trong tế bào. Chứa các bào quan và tham gia nhiều phản ứng trao đổi chất.',facts:['Gồm ~80% là nước','Chứa hàng nghìn loại enzyme','Nơi diễn ra đường phân (glycolysis)']},
+      {id:'membrane',name:'Màng tế bào',color:0x32cd32,pos:[0,0,0],geo:'sphere',size:[2.0,20,20],info:'Lớp lipid kép bao quanh tế bào. Kiểm soát vận chuyển các chất vào/ra tế bào qua kênh protein.',facts:['Dày chỉ 7–8 nanomet','Có hàng nghìn protein màng','Chọn lọc chất đi qua một cách tinh vi']},
+      {id:'nucleus',name:'Nhân tế bào',color:0x4169e1,pos:[0,0,0],geo:'sphere',size:[0.95,20,20],info:'Trung tâm điều khiển tế bào. Chứa DNA — bản thiết kế toàn bộ cơ thể. Đường kính ~6 micromet.',facts:['Chứa 46 nhiễm sắc thể (23 cặp)','DNA dài ~2 mét nếu trải ra từ 1 tế bào','Kiểm soát mọi hoạt động tế bào']},
+      {id:'mitochondria',name:'Ti thể',color:0xff8c00,pos:[1.1,0.5,0],geo:'sphere',size:[0.38,12,12],info:'Nhà máy năng lượng của tế bào. Sản xuất ATP qua hô hấp tế bào. Có DNA riêng, tiến hóa từ vi khuẩn cổ đại.',facts:['Sản xuất ~90% năng lượng tế bào','Có DNA riêng biệt với nhân tế bào','Di truyền từ mẹ sang con']},
+      {id:'ribosome',name:'Ribosome',color:0xffd700,pos:[-0.9,0.7,0.4],geo:'sphere',size:[0.22,8,8],info:'Nơi tổng hợp protein theo mã di truyền từ mRNA. Có trong mọi tế bào sống.',facts:['Mỗi tế bào có 10 triệu ribosome','Tổng hợp ~200 amino acid mỗi phút','Có thể tự do hoặc gắn vào lưới nội chất']},
+      {id:'er',name:'Lưới nội chất',color:0x9370db,pos:[0.5,-0.7,0],geo:'box',size:[0.85,0.13,0.85],info:'Hệ thống màng nội bào. Lưới nội chất hạt tổng hợp protein bài tiết; lưới nội chất trơn chuyển hóa lipid.',facts:['Diện tích bề mặt lớn hơn màng tế bào','Nối trực tiếp với màng nhân','Vận chuyển protein đến bộ Golgi']},
+      {id:'golgi',name:'Bộ Golgi',color:0xff69b4,pos:[-0.55,-0.6,0.3],geo:'box',size:[0.55,0.42,0.16],info:'Bưu điện của tế bào. Nhận protein từ lưới nội chất, chỉnh sửa, đóng gói và vận chuyển đến đích.',facts:['Đặt theo tên nhà khoa học Camillo Golgi','Gồm 4–8 túi màng xếp chồng','Quyết định điểm đến của từng loại protein']},
+      {id:'lysosome',name:'Lysosome',color:0xff4500,pos:[0.1,-0.9,0.5],geo:'sphere',size:[0.27,8,8],info:'Túi tiêu hóa của tế bào. Chứa enzyme mạnh (pH 4.5–5). Phân hủy chất cũ và vi khuẩn xâm nhập.',facts:['pH bên trong chỉ 4.5–5','Phân hủy cả vi khuẩn lẫn bào quan hỏng','Enzyme có thể phá hủy toàn bộ tế bào nếu thoát ra']},
+    ]
+  },
+  micro: {
+    label: 'Vi cấu trúc',
+    parts: [
+      {id:'dna',name:'Phân tử DNA',color:0x00ff7f,pos:[0,0,0],geo:'cyl',size:[0.09,0.09,3.2,8],info:'Phân tử xoắn kép mang thông tin di truyền. Đường kính 2 nanomet, chứa ~3.2 tỉ cặp base trong bộ gen người.',facts:['Dài 2 mét nếu trải ra từ 1 tế bào','3.2 tỉ cặp base trong bộ gen người','DNA trong toàn cơ thể nối lại dài ~600 tỉ km']},
+      {id:'chromosome',name:'Nhiễm sắc thể',color:0x9932cc,pos:[-0.9,0.9,0],geo:'cyl',size:[0.17,0.17,0.65,8],info:'DNA quấn quanh histone tạo thành chuỗi nucleosome rồi cuộn chặt thành nhiễm sắc thể. Người có 46 NST.',facts:['46 nhiễm sắc thể (23 cặp)','NST số 1 lớn nhất: 248 triệu cặp base','XX = nữ, XY = nam']},
+      {id:'protein',name:'Protein',color:0xff6347,pos:[0.8,0.5,0],geo:'sphere',size:[0.32,12,12],info:'Phân tử đa chức năng: enzyme, kháng thể, collagen, hemoglobin đều là protein. Được mã hóa bởi gen.',facts:['Hơn 100,000 loại protein trong cơ thể','Cấu thành từ 20 loại amino acid','Hemoglobin vận chuyển oxy trong máu']},
+      {id:'enzyme',name:'Enzyme',color:0xffd700,pos:[0,-0.8,0.5],geo:'sphere',size:[0.22,8,8],info:'Chất xúc tác sinh học. Tăng tốc phản ứng hóa học hàng triệu lần. Mỗi enzyme chỉ tác dụng lên cơ chất đặc hiệu.',facts:['Hàng nghìn loại enzyme khác nhau','Không bị tiêu thụ trong phản ứng','Nhiệt độ và pH ảnh hưởng mạnh đến hoạt tính']},
+      {id:'atp',name:'Phân tử ATP',color:0x00bfff,pos:[-0.6,-0.5,0],geo:'sphere',size:[0.2,8,8],info:'Đồng tiền năng lượng của tế bào. Mọi phản ứng cần năng lượng đều sử dụng ATP. Được tổng hợp bởi ti thể.',facts:['Cơ thể sản xuất lượng ATP bằng trọng lượng bản thân mỗi ngày','3 nhóm phosphate dự trữ năng lượng','Mỗi tế bào cần hàng triệu ATP mỗi giây']},
+      {id:'rna',name:'Phân tử RNA',color:0x98fb98,pos:[0.3,-0.9,-0.2],geo:'cyl',size:[0.07,0.07,1.6,6],info:'Trung gian giữa DNA và protein. mRNA mang mã di truyền, tRNA vận chuyển amino acid, rRNA cấu thành ribosome.',facts:['3 loại chính: mRNA, tRNA, rRNA','Sợi đơn, kém bền hơn DNA','microRNA điều hòa biểu hiện gen']},
+      {id:'membrane_protein',name:'Protein màng',color:0xff1493,pos:[0,1.3,0],geo:'cyl',size:[0.11,0.11,0.65,8],info:'Protein gắn vào màng tế bào. Đóng vai trò thụ thể, kênh vận chuyển và enzyme. Chiếm ~50% khối lượng màng.',facts:['Có thể di động trong màng (mô hình khảm lỏng)','Thụ thể nhận tín hiệu từ hormone','Kênh ion điều hòa điện thế màng']},
+    ]
+  }
+};
+ 
+const canvas = document.getElementById('c');
+const renderer = new THREE.WebGLRenderer({canvas, antialias:true});
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+renderer.setClearColor(0x0a0e1a, 1);
+//bổ sung 
+renderer.physicallyCorrectLights = true;
+renderer.outputEncoding = THREE.sRGBEncoding;
+ // bổ sung
+const scene = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(50, 1, 0.1, 100);
+camera.position.set(0, 0, 8);
+ // bổ sung 
+const hemiLight = new THREE.HemisphereLight(0xffffff, 0x223344, 1.2);
+scene.add(hemiLight);
+
+const dirLight = new THREE.DirectionalLight(0xffffff, 2);
+dirLight.position.set(5, 10, 7);
+scene.add(dirLight);
+
+const fillLight = new THREE.DirectionalLight(0x4466aa, 1);
+fillLight.position.set(-5, -3, -5);
+scene.add(fillLight);
+
+const envLoader = new THREE.TextureLoader();
+envLoader.load('https://threejs.org/examples/textures/uv_grid_opengl.jpg', function(tex){
+  tex.mapping = THREE.EquirectangularReflectionMapping;
+  scene.environment = tex;
+});
+//bos
+ 
+const particles = [];
+const pGeo = new THREE.SphereGeometry(0.018, 4, 4);
+for(let i = 0; i < 150; i++){
+  const m = new THREE.Mesh(pGeo, new THREE.MeshBasicMaterial({color:0x1a3a6e, transparent:true, opacity:0.5}));
+  m.position.set((Math.random()-0.5)*18, (Math.random()-0.5)*14, (Math.random()-0.5)*10-5);
+  scene.add(m);
+  particles.push({m, vx:(Math.random()-0.5)*0.006, vy:(Math.random()-0.5)*0.006});
+}
+ 
+let meshes = [], currentLevel = 'body', selectedId = null;
+let rotX = 0, rotY = 0, isDragging = false, lastX = 0, lastY = 0;
+let targetRotX = 0, targetRotY = 0;
+let zoomDist = 8, targetZoom = 8;
+const group = new THREE.Group();
+scene.add(group);
+ 
+function buildGeo(p) {
+  const {geo, size} = p;
+  if(geo === 'sphere') return new THREE.SphereGeometry(...size);
+  if(geo === 'box') return new THREE.BoxGeometry(...size);
+  if(geo === 'cyl') return new THREE.CylinderGeometry(...size);
+  return new THREE.SphereGeometry(0.5, 16, 16);
+}
+ 
+function buildLevel(lv) {
+  meshes.forEach(({mesh}) => group.remove(mesh));
+  meshes = [];
+  LEVELS[lv].parts.forEach(p => {
+    const geo = buildGeo(p);
+   //kkk
+   const mat = new THREE.MeshStandardMaterial({
+  color: p.color,
+  roughness: 0.35,
+  metalness: 0.15,
+  transparent: true,
+  opacity: 0.95,
+  emissive: new THREE.Color(0x000000),
+  emissiveIntensity: 0
+});
+//kk
+    const mesh = new THREE.Mesh(geo, mat);
+    mesh.position.set(...p.pos);
+    mesh.userData = {id: p.id};
+    group.add(mesh);
+    meshes.push({mesh, part:p, mat});
+  });
+  selectedId = null;
+  buildPartsList(lv);
+  showInfo(null);
+}
+ 
+function buildPartsList(lv) {
+  const c = document.getElementById('parts-container');
+  c.innerHTML = '';
+  LEVELS[lv].parts.forEach(p => {
+    const d = document.createElement('div');
+    d.className = 'part-item';
+    d.id = 'pi-' + p.id;
+    const dot = document.createElement('div');
+    dot.className = 'part-dot';
+    dot.style.background = '#' + p.color.toString(16).padStart(6, '0');
+    const span = document.createElement('span');
+    span.className = 'part-name';
+    span.textContent = p.name;
+    d.appendChild(dot);
+    d.appendChild(span);
+    d.onclick = () => selectPart(p.id);
+    c.appendChild(d);
+  });
+}
+ 
+function selectPart(id) {
+  selectedId = id;
+  meshes.forEach(({mesh, part, mat}) => {
+    if(part.id === id){
+      mat.emissive.setHex(0x224488);
+      mat.emissiveIntensity = 0.6;
+      mat.opacity = 1.0;
+    } else {
+      mat.emissive.setHex(0x000000);
+      mat.emissiveIntensity = 0;
+      mat.opacity = 0.75;
+    }
+  });
+  document.querySelectorAll('.part-item').forEach(el => el.classList.remove('selected'));
+  const el = document.getElementById('pi-' + id);
+  if(el){
+    el.classList.add('selected');
+    el.scrollIntoView({block:'nearest', behavior:'smooth'});
+  }
+  const part = LEVELS[currentLevel].parts.find(p => p.id === id);
+  if(part) showInfo(part);
+}
+ 
+function showInfo(part) {
+  if(!part){
+    document.getElementById('info-title').textContent = LEVELS[currentLevel].label;
+    document.getElementById('info-desc').textContent = 'Chọn một bộ phận để xem thông tin chi tiết. Kéo để xoay mô hình 3D.';
+    document.getElementById('info-facts').innerHTML = '';
+    return;
+  }
+  document.getElementById('info-title').textContent = part.name;
+  document.getElementById('info-desc').textContent = part.info;
+  document.getElementById('info-facts').innerHTML = part.facts.map(f => `<div class="fact">• ${f}</div>`).join('');
+}
+ 
+function setLevel(lv) {
+  currentLevel = lv;
+  document.querySelectorAll('.level-btn').forEach((b, i) => {
+    const lvs = ['body','organs','tissue','cell','micro'];
+    b.classList.toggle('active', lvs[i] === lv);
+  });
+  buildLevel(lv);
+  group.rotation.set(0, 0, 0);
+  rotX = 0; rotY = 0; targetRotX = 0; targetRotY = 0;
+  const zooms = {body:8, organs:6.5, tissue:5.5, cell:5, micro:4};
+  targetZoom = zooms[lv] || 7;
+}
+ 
+const raycaster = new THREE.Raycaster();
+const mouse = new THREE.Vector2();
+ 
+function getCanvasPos(e) {
+  const rect = canvas.getBoundingClientRect();
+  const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+  const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+  return {x: clientX - rect.left, y: clientY - rect.top, clientX, clientY};
+}
+ 
+canvas.addEventListener('mousedown', e => {
+  isDragging = true; lastX = e.clientX; lastY = e.clientY;
+});
+canvas.addEventListener('mouseup', e => {
+  if(Math.abs(e.clientX - lastX) < 4 && Math.abs(e.clientY - lastY) < 4){
+    const rect = canvas.getBoundingClientRect();
+    mouse.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
+    mouse.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
+    raycaster.setFromCamera(mouse, camera);
+    const hits = raycaster.intersectObjects(meshes.map(m => m.mesh));
+    if(hits.length > 0) selectPart(hits[0].object.userData.id);
+  }
+  isDragging = false;
+});
+canvas.addEventListener('mousemove', e => {
+  if(isDragging){
+    targetRotY += (e.clientX - lastX) * 0.009;
+    targetRotX += (e.clientY - lastY) * 0.009;
+    lastX = e.clientX; lastY = e.clientY;
+  }
+  const rect = canvas.getBoundingClientRect();
+  mouse.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
+  mouse.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
+  raycaster.setFromCamera(mouse, camera);
+  const hits = raycaster.intersectObjects(meshes.map(m => m.mesh));
+  const tip = document.getElementById('tooltip');
+  if(hits.length > 0){
+    const part = LEVELS[currentLevel].parts.find(p => p.id === hits[0].object.userData.id);
+    tip.textContent = part ? part.name : '';
+    tip.style.opacity = '1';
+    tip.style.left = (e.clientX - rect.left + 14) + 'px';
+    tip.style.top = (e.clientY - rect.top - 12) + 'px';
+    canvas.style.cursor = 'pointer';
+  } else {
+    tip.style.opacity = '0';
+    canvas.style.cursor = isDragging ? 'grabbing' : 'grab';
+  }
+});
+canvas.addEventListener('wheel', e => {
+  e.preventDefault();
+  targetZoom = Math.max(2, Math.min(16, targetZoom + e.deltaY * 0.012));
+}, {passive: false});
+ 
+let touchDist = 0;
+canvas.addEventListener('touchstart', e => {
+  if(e.touches.length === 1){
+    isDragging = true;
+    lastX = e.touches[0].clientX;
+    lastY = e.touches[0].clientY;
+  } else if(e.touches.length === 2){
+    touchDist = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY);
+  }
+}, {passive: true});
+canvas.addEventListener('touchend', e => {
+  if(e.changedTouches.length === 1 && Math.abs(e.changedTouches[0].clientX - lastX) < 8){
+    const rect = canvas.getBoundingClientRect();
+    mouse.x = ((e.changedTouches[0].clientX - rect.left) / rect.width) * 2 - 1;
+    mouse.y = -((e.changedTouches[0].clientY - rect.top) / rect.height) * 2 + 1;
+    raycaster.setFromCamera(mouse, camera);
+    const hits = raycaster.intersectObjects(meshes.map(m => m.mesh));
+    if(hits.length > 0) selectPart(hits[0].object.userData.id);
+  }
+  isDragging = false;
+}, {passive: true});
+canvas.addEventListener('touchmove', e => {
+  if(e.touches.length === 1 && isDragging){
+    targetRotY += (e.touches[0].clientX - lastX) * 0.009;
+    targetRotX += (e.touches[0].clientY - lastY) * 0.009;
+    lastX = e.touches[0].clientX;
+    lastY = e.touches[0].clientY;
+  } else if(e.touches.length === 2){
+    const d = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY);
+    targetZoom = Math.max(2, Math.min(16, targetZoom - (d - touchDist) * 0.03));
+    touchDist = d;
+  }
+}, {passive: true});
+ 
+function resize(){
+  const wrap = document.getElementById('canvas-wrap');
+  const w = wrap.clientWidth, h = wrap.clientHeight;
+  renderer.setSize(w, h);
+  camera.aspect = w / h;
+  camera.updateProjectionMatrix();
+}
+window.addEventListener('resize', resize);
+resize();
+ 
+let t = 0;
+function animate(){
+  requestAnimationFrame(animate);
+  t += 0.004;
+  rotX += (targetRotX - rotX) * 0.08;
+  rotY += (targetRotY - rotY) * 0.08;
+  group.rotation.x = rotX;
+  group.rotation.y = rotY + t * 0.07;
+  zoomDist += (targetZoom - zoomDist) * 0.08;
+  camera.position.z = zoomDist;
+  particles.forEach(p => {
+    p.m.position.x += p.vx;
+    p.m.position.y += p.vy;
+    if(p.m.position.x > 9) p.m.position.x = -9;
+    if(p.m.position.x < -9) p.m.position.x = 9;
+    if(p.m.position.y > 7) p.m.position.y = -7;
+    if(p.m.position.y < -7) p.m.position.y = 7;
+  });
+  renderer.render(scene, camera);
+
+}meshes.forEach(({mesh, part}) => {
+  if(part.id === 'heart'){
+    const s = 1 + Math.sin(Date.now()*0.005)*0.05;
+    mesh.scale.set(s, s, s);
+
+    mesh.material.emissive.setHex(0xff0000);
+    mesh.material.emissiveIntensity = 0.4;
+  }
+});
+ 
+buildLevel('body');
+animate();
+</script>
+</body>
+</html>
